@@ -1,11 +1,8 @@
-"""
-Adaptive Weighted Nearest Neighbor Density Estimation
------------------------------------------------------
-"""
+
 
 import numpy as np
-from sklearn.neighbors import KDTree, KNeighborsClassifier
-from sklearn.metrics import mean_squared_error
+from sklearn.neighbors import KDTree, KNeighborsClassifier, KernelDensity
+from sklearn.metrics import recall_score
 
 class UnitBallSampler(object):
     def __init__(
@@ -33,40 +30,78 @@ class OKNN(object):
     def __init__(
         self,
         *,
-        n_neighbors_density = 5,
+        n_neighbors_density = None,
+        h = None,
         n_neighbors = 10,
         random_state = 1,
     ):
         self.n_neighbors_density = n_neighbors_density
+        self.h = h
         self.n_neighbors = n_neighbors
         self.random_state = random_state
         
+    def oversample_knn(self, X, n_sample):
         
-
-    def fit(self, X, y):
         
-
-        
-        kdtree = KDTree(X)
-        self.n_sample, self.dim = X.shape
-
-        X_minor = X[ y == 1, :]
-        n_minor = X_minor.shape[0]
-        X_major = X[ y == 0, :]
-        n_major = X_major.shape[0]
         
         sampler = UnitBallSampler(self.dim, self.random_state)
-        over_samples = sampler.sample(n_major - n_minor)
+        over_samples = sampler.sample(n_sample )
+        
+        kdtree = KDTree(X)
         
         np.random.seed(self.random_state)
-        neighbors = X_minor[np.random.choice(n_minor, n_major - n_minor)]
+        neighbors = X[np.random.choice(X.shape[0], n_sample )]
         k_dist, _ = kdtree.query(neighbors, k = self.n_neighbors_density + 1)
         k_dist = k_dist[:,-1]
         
         X_oversample = neighbors + (over_samples.T * k_dist).T
         
-        X_whole = np.vstack([X, X_oversample])
-        y_whole = np.append(y, np.ones(n_major - n_minor))
+        return X_oversample
+        
+
+    def oversample_kde(self, X, n_sample):
+        
+        
+        
+        sampler = KernelDensity(bandwidth = self.h).fit(X)
+        X_oversample = sampler.sample(n_sample)
+        
+        return X_oversample
+        
+        
+        
+    def fit(self, X, y):
+        
+        self.n_sample, self.dim = X.shape
+        
+        if self.h is not None:
+            self.oversample = self.oversample_kde
+        elif self.n_neighbors_density is not None:
+            self.oversample = self.oversample_knn
+            
+            
+        labels = np.unique(y)
+        n_class = labels.shape[0]
+        n_samples = [(y==label).sum() for label in labels]
+        major_class = np.argmax(n_samples)
+        n_major = np.max(n_samples)
+        
+        
+            
+        X_whole = X[y == major_class]
+        y_whole = np.repeat(major_class, n_major)
+        
+        for label in labels:
+            
+            if label == major_class:
+                continue
+            else:
+                X_whole = np.vstack([X_whole, self.oversample(X[y==label], n_major)])
+                y_whole = np.append(y_whole, np.repeat(label, n_major))
+        
+        
+        self.X_whole = X_whole
+        self.y_whole = y_whole
         
         self.classifier = KNeighborsClassifier(n_neighbors = self.n_neighbors)
         self.classifier.fit(X_whole, y_whole)
@@ -136,7 +171,9 @@ class OKNN(object):
   
 
     def score(self, X, y):
-        return mean_squared_error(self.predict(X), y)
+        return - recall_score( y_true = y,
+                               y_pred = self.predict(X),
+                               average = "macro") 
         
         
                 
