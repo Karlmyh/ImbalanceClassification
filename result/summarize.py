@@ -4,7 +4,9 @@ import pandas as pd
 import glob
 
 
-
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 1000)
 
 
 # real data tree summarize
@@ -17,14 +19,43 @@ method_seq = [os.path.split(method)[1].split('.')[0] for method in method_seq]
 print(method_seq)
 summarize_log=pd.DataFrame([])
 
+all_results_seq = []
 for method in method_seq:
-    log = pd.read_csv("{}/{}.csv".format(log_file_dir,method), header=None)
-    log.columns = "dataset,iteration,time,am,n1,n2".split(',')
-    log["method"]=method
-    summarize_log=summarize_log.append(log)
+    if method == "BorderlineSMOTE":
+        continue
+    print(method)
+    logs = pd.read_csv("{}/{}.csv".format(log_file_dir,method), header=None)
+    logs.columns = ["dataset_name", "idx", "n_neighbors1", "n_neighbors2", "random_state", "time_exp", "test_acc", "test_recall", "test_precision", "test_f1", "test_gmean"]
+    logs = logs.sort_values(["dataset_name", "idx", "n_neighbors1", "n_neighbors2"])
+    logs = logs.reset_index(drop=True)
+    logs = logs.drop(["random_state", "test_acc", "test_precision", "test_f1"], axis=1)
+    best_idx = logs.groupby(["dataset_name", "idx"]).idxmax()["test_recall"]
     
- 
-summary = pd.pivot_table(summarize_log, index=["dataset"],columns=["method"], values=[ "am","time"], aggfunc=[np.mean, np.std, len])
-summary.to_excel("./realdata_summary.xlsx")
+    best_idx[best_idx.isna()] = 0
+        
+    results = logs.loc[best_idx]
+    results = results.groupby(["dataset_name"]).agg({
+            "test_recall": ["mean", "std"],
+            "test_gmean": ["mean", "std"],
+            "time_exp": ["mean", "std", len]
+        })
+    results.columns = ['_'.join(col) for col in results.columns.values]
+    results = results.reset_index()
+    results = results.sort_values(["dataset_name"])
+    results.insert(1, "method", method)
+    results = results.reset_index(drop=True)
+    all_results_seq.append(results)
+all_results = pd.concat(all_results_seq, axis=0)
+all_results = all_results.reset_index(drop=True)
+all_results = all_results.sort_values(['dataset_name', 'method'])
+all_results = all_results.set_index(keys=['dataset_name', 'method'])
+print(all_results)
+all_results.to_excel("./realdata_summary.xlsx", index=True)
+
+
+
+
+
+
 
 

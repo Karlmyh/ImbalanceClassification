@@ -18,20 +18,21 @@ from imblearn.metrics import geometric_mean_score
 # config
 dataset_dir = "./data/"
 dataset_name_seq = [
+    "ActivityRecognitionWithHealthyOlderPeopleUsingABatterylessWearableSensor-RoomSet2",
     #"OccupancyDetection",
     #"Adult",
     #"APSFailure",
-    "BuzzInSocialMedia-Twitter_Relative_labeling_sigma1000",
-    "DefaultOfCreditCardClients",
+    #"BuzzInSocialMedia-Twitter_Relative_labeling_sigma1000",
+    #"DefaultOfCreditCardClients",
     #"BitcoinHeistRansomwareAddress-binarize",
 ]
 
 classifier_method = "OKNN"
 
 n_neighbors_seq = [1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 100]
-n_neighbors_density_seq = [1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 100]
+h_seq = [0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5]
 
-parameters = {"n_neighbors": n_neighbors_seq, "n_neighbors_density": n_neighbors_density_seq}
+parameters = {"n_neighbors": n_neighbors_seq, "n_neighbors_density": h_seq}
 
 n_jobs = 32
 n_splits = 10
@@ -67,13 +68,9 @@ for dataset_name in dataset_name_seq:
         # running
         
         try:
-            test_time_max = 0
-            test_am_max = 0
-            n_neighbors_max = 0
-            n_neighbors_density_max = 0
-            for n_neighbors, n_neighbors_density in product(n_neighbors_seq, n_neighbors_density_seq):
+            for n_neighbors, h in product(n_neighbors_seq, h_seq):
 
-                model_OKNN = OKNN(n_neighbors = n_neighbors, n_neighbors_density = n_neighbors_density)
+                model_OKNN = OKNN(n_neighbors = n_neighbors, h = h)
                 model_OKNN.fit(X_train, y_train)
 
                 time_start = time()
@@ -85,17 +82,25 @@ for dataset_name in dataset_name_seq:
                 test_am = recall_score(y_true=y_test,
                                            y_pred=y_test_hat,
                                            average="macro") 
-                if test_am > test_am_max:
-                    test_am_max = test_am
-                    test_time_max = test_time
-                    n_neighbors_density_max = n_neighbors_density
-                    n_neighbors_max = n_neighbors
+                test_acc = accuracy_score(y_true=y_test, y_pred=y_test_hat)
+                test_precision = precision_score(y_true=y_test,
+                                                 y_pred=y_test_hat,
+                                                 average="macro")
+                test_f1 = f1_score(y_true=y_test,
+                                   y_pred=y_test_hat,
+                                   average="macro")
+                test_gmean = geometric_mean_score(y_true=y_test,
+                                                  y_pred=y_test_hat,
+                                                  average="macro")
+                
             # save results
-            with open(save_path, 'a') as f:
-                f.writelines(
-                    "{},{},{},{},{},{}\n"
-                    .format(dataset_name, idx, test_time_max, test_am_max,n_neighbors_max,n_neighbors_density_max))
+                with open(save_path, 'a') as f:
+                    f.writelines(
+                        "{},{},{},{},{},{},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f}\n"
+                        .format(dataset_name, idx, n_neighbors, h, random_state, test_time, test_acc, test_am, test_precision, test_f1, test_gmean))
         except Exception as e:
             with open(error_path, "a") as f:
                 f.writelines("{},{},{}\n".format(
                     dataset_name, idx, e))
+                
+
